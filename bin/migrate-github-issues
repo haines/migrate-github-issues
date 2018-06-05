@@ -1,0 +1,65 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "bundler/setup"
+
+require "optparse"
+require_relative "../lib/github_issue_migrator"
+
+usage = <<~USAGE.chomp
+  Usage:
+    #{$PROGRAM_NAME} [flags] from-user/repo to-user/repo
+USAGE
+
+labels = []
+
+parser = OptionParser.new do |options|
+  options.banner = <<~BANNER
+    Move GitHub issues between repositories.
+
+    #{usage}
+
+    Arguments:
+      from-user/repo  Slug of the repository to copy issues from
+      to-user/repo    Slug of the repository to copy issues to
+
+    Required environment variables:
+      GITHUB_TOKEN  OAuth access token with read and write access to both repositories
+
+    Flags:
+  BANNER
+
+  options.summary_indent = "  "
+
+  options.on "--label LABEL", "Label to add to migrated issues" do |value|
+    labels << value
+  end
+
+  options.on_tail "-h", "--help", "Get help" do
+    $stderr.puts options.help
+    exit
+  end
+end
+
+parser.order!
+
+abort <<~ERROR unless ARGV.size == 2 && ARGV.all? { |arg| %r{\A[\w-]+/[\w-]+\z}.match?(arg) }
+  \e[31mInvalid arguments, expected two repository slugs\e[0m
+
+  #{usage}
+ERROR
+
+from, to = ARGV
+
+abort "\e[31mCannot migrate issues within the same repository\e[0m" if from == to
+
+access_token = ENV.fetch("GITHUB_TOKEN", "")
+
+abort "\e[31mInvalid GITHUB_TOKEN #{access_token.inspect}\e[0m" unless /\A[0-9a-f]{40}\z/.match?(access_token)
+
+GitHubIssueMigrator.new(
+  from: from,
+  to: to,
+  access_token: access_token,
+  labels: labels
+).migrate_issues
